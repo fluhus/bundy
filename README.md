@@ -44,15 +44,17 @@ bundyx -i my_genome.fa -r my_bowtie_index -l READ_LENGTH -o bundyx.out
 Run this on each query (fastq) file.
 
 ```
-bundy -i my_data.fq -r my_bowtie_index -x bundyx.out
+bundy -i my_data.fq -r my_bowtie_index -x bundyx.out -o abundances.tsv
 ```
 
 1. Add `-t N` to run on N threads.
-2. If the reference contains multiple contigs per species,
+2. If there are several bundyx files, use a glob pattern like `-x "bundyx.out.*"`
+   (keep the quote signs).
+3. If the reference contains multiple contigs per species,
    bundy needs to know which contigs to group together.
    It uses a regular expression to extract the group name
    out of each sequence name.  
    For example if the sequence names are "species_1_contig_1",
    "species_1_contig_2", "species_2_contig_1", "species_2_contig_2"...
    provide `-n species_\\d+` to group by species number.
-3. Use `-h` for help about additional options.
+4. Use `-h` for help about additional options.
