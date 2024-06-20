@@ -30,7 +30,7 @@ bundyx -i my_genome.fa -r my_bowtie_index -l READ_LENGTH -o bundyx.out
 
 1. Read length should match the read length in the future input files.
    It doesn't have to be exactly the same but the closer the better.
-   For example, 100 can usually cover reads of lengths from 70 to 150 bases long.
+   For example, 100 can usually cover reads of lengths from 70 to 150.
 2. Add `-t N` to run on N threads.
 3. If running on a queue system like sbatch or qsub,
    you can break the process down into sub-jobs for more parallelization.
