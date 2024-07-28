@@ -52,7 +52,7 @@ var (
 	refFile      = flag.String("r", "", "Bowtie reference")
 	unmappedFile = flag.String("u", "", "Print unmapped reads to this fastq")
 	oksGlob      = flag.String("x", "", "Bundyx data files glob")
-	threads      = flag.Int("t", 2, "Number of bowtie2 threads")
+	threads      = flag.Int("t", 1, "Number of bowtie2 threads")
 	toJSON       = flag.Bool("j", false, "Output JSON instead of TSV")
 	ignoreLength = flag.Bool("l", false, "Ignore genome lengths in normalization")
 	namePat      = flag.String("n", ".*",
@@ -73,7 +73,6 @@ func main() {
 		fmt.Fprintln(os.Stderr, "printWhiteList", printWhiteList)
 		fmt.Fprintln(os.Stderr, "maxBinomialErr", maxBinomialErr)
 		fmt.Fprintln(os.Stderr, "assertNZNonNeg", assertNZNonNeg)
-		// fmt.Fprintln(os.Stderr, "altBinomial", altBinomial)
 		fmt.Fprintln(os.Stderr, "**********")
 		fmt.Fprintln(os.Stderr)
 	}
@@ -156,8 +155,8 @@ func main() {
 
 	var wl sets.Set[string]
 	{ // TODO(amit): Make this a function?
-		wl = sets.Set[string]{}.Add(
-			maps.Keys(entriesToAbundances(entries, denseSumRatio, minNZ, 0))...)
+		wl = sets.FromKeys(
+			entriesToAbundances(entries, denseSumRatio, minNZ, 0))
 		fmt.Fprintln(os.Stderr, "Found", len(wl), "candidate genomes")
 		if printWhiteList {
 			fmt.Fprintln(os.Stderr, wl)
@@ -171,8 +170,8 @@ func main() {
 		quals := map[int]int{}
 
 		z, _ := gzip.NewReader(bytes.NewBuffer(samBytes))
-		r := sam.NewReader(z)
-		for sm, err := r.Read(); err == nil; sm, err = r.Read() {
+		for sm, err := range sam.NewReader(z).Iter() {
+			common.Die(err)
 			pt.Inc()
 			all++
 			if sm.Flag == sam.FlagUnmapped {
@@ -203,13 +202,11 @@ func main() {
 	if printRawCounts {
 		abnd = entriesToRawCounts(entries)
 	}
-	if wl != nil {
-		abnd = snm.FilterMap(abnd, func(s string, f float64) bool {
-			return wl.Has(s)
-		})
-		if !printRawCounts {
-			toSum1(abnd)
-		}
+	abnd = snm.FilterMap(abnd, func(s string, f float64) bool {
+		return wl.Has(s)
+	})
+	if !printRawCounts {
+		toSum1(abnd)
 	}
 	fmt.Fprintln(os.Stderr, "Grouped to", len(abnd), "genomes")
 
@@ -252,12 +249,12 @@ func main() {
 		n := 0
 		pt = ptimer.NewMessage("{} reads processed")
 		z, _ := gzip.NewReader(bytes.NewBuffer(samBytes))
-		r := sam.NewReader(z)
 
-		for sm, err := r.Read(); err == nil; sm, err = r.Read() {
+		for sm, err := range sam.NewReader(z).Iter() {
+			common.Die(err)
 			pt.Inc()
 			if sm.Flag == sam.FlagUnmapped || sm.Mapq < qualThresh2 ||
-				nameRE.FindString(sm.Rname) == "" {
+				abnd[nameRE.FindString(sm.Rname)] == 0 {
 				n++
 				if uout != nil {
 					common.Die(writeSamAsFastq(sm, uout))
