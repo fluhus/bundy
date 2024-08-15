@@ -28,6 +28,8 @@ const (
 	qualThresh  = 2
 	readStep    = 4
 	bucket2Size = 1000
+
+	useFastBowtie = false // Experiment: use bowtie's fast mapping.
 )
 
 var (
@@ -54,9 +56,15 @@ func main() {
 	fmt.Println("Starting")
 	t := time.Now()
 	fa := makeFasta()
-	sams := bowtie.MapReader(fa, *refFile, *nthreads,
-		"-F", fmt.Sprintf("%d,%d", *readLen, readStep))
-	checkSam(sams)
+	var sams iter.Seq2[*sam.SAM, error]
+	if useFastBowtie {
+		sams = bowtie.MapReader(fa, *refFile, *nthreads,
+			"-F", fmt.Sprintf("%d,%d", *readLen, readStep), "--very-fast")
+	} else {
+		sams = bowtie.MapReader(fa, *refFile, *nthreads,
+			"-F", fmt.Sprintf("%d,%d", *readLen, readStep))
+	}
+	common.Die(checkSam(sams))
 	fmt.Println("Took", time.Since(t))
 	fmt.Println("Done")
 }

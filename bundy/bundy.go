@@ -4,14 +4,16 @@ package main
 import (
 	"bytes"
 	"cmp"
-	"compress/gzip"
 	"flag"
 	"fmt"
 	"io"
+	"iter"
 	"math"
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime/debug"
+	"slices"
 	"sort"
 	"strings"
 
@@ -25,6 +27,7 @@ import (
 	"github.com/fluhus/gostuff/ptimer"
 	"github.com/fluhus/gostuff/sets"
 	"github.com/fluhus/gostuff/snm"
+	"github.com/klauspost/compress/zstd"
 	"golang.org/x/exp/maps"
 )
 
@@ -44,10 +47,12 @@ const (
 	printWhiteList  = false
 	assertNZNonNeg  = true
 	printRawCounts  = false
+	printNReads     = false
 )
 
 var (
 	inFile       = flag.String("i", "", "Input fastq file")
+	inFile2      = flag.String("i2", "", "Second input fastq file for paired-end")
 	outFile      = flag.String("o", "", "Output TSV file")
 	refFile      = flag.String("r", "", "Bowtie reference")
 	unmappedFile = flag.String("u", "", "Print unmapped reads to this fastq")
@@ -55,6 +60,8 @@ var (
 	threads      = flag.Int("t", 1, "Number of bowtie2 threads")
 	toJSON       = flag.Bool("j", false, "Output JSON instead of TSV")
 	ignoreLength = flag.Bool("l", false, "Ignore genome lengths in normalization")
+	fast         = flag.Bool("fast", false, "Quick run, loses some accuracy")
+	interleaved  = flag.Bool("interleaved", false, "Input fasta has interleaved paired-end reads")
 	namePat      = flag.String("n", ".*",
 		"Pattern by which to group contigs of the same species")
 
@@ -78,6 +85,7 @@ func main() {
 	}
 
 	flag.Parse()
+	debug.SetGCPercent(20)
 
 	if *inFile == "" {
 		common.Die(fmt.Errorf("no input file"))
@@ -110,9 +118,22 @@ func main() {
 	pt = ptimer.NewMessage("Loading reference")
 	quals := map[int]int{}
 	samBuf := bytes.NewBuffer(nil)
-	samZip, _ := gzip.NewWriterLevel(samBuf, 1)
+	samZip, _ := zstd.NewWriter(samBuf, zstd.WithEncoderLevel(1))
 
-	for sm, err := range bowtie.Map(*inFile, *refFile, *threads) {
+	var sams iter.Seq2[*sam.SAM, error]
+	args := common.If(*fast, []string{"--very-fast"}, nil)
+	if *inFile2 == "" {
+		if *interleaved {
+			sams = bowtie.MapInt(*inFile, *refFile, *threads, args...)
+		} else {
+			sams = bowtie.Map(*inFile, *refFile, *threads, args...)
+		}
+	} else {
+		sams = bowtie.Map2(*inFile, *inFile2, *refFile, *threads, args...)
+	}
+
+	nreads := 0 // TODO(amit): Consider whether we need this.
+	for sm, err := range sams {
 		common.Die(err)
 		if pt.N == 0 {
 			pt.Done()
@@ -135,23 +156,21 @@ func main() {
 			continue
 		}
 
+		nreads++
 		entries[sm.Rname].addPos(sm.Pos)
 	}
 	pt.Done()
+	if printNReads {
+		fmt.Println("NReads:", nreads)
+	}
 
 	samZip.Close()
-	samBytes := samBuf.Bytes()
+	samBytes := slices.Clip(samBuf.Bytes())
 
 	fmt.Fprintf(os.Stderr, "Mapped OK %v | Low quality %v | Unmapped %v\n",
 		common.Percf(all-unmapped-lowq, all, 0),
 		common.Percf(lowq, all, 0),
 		common.Percf(unmapped, all, 0))
-	ncontigs := 0
-	for _, e := range entries {
-		if e.counts != nil {
-			ncontigs++
-		}
-	}
 
 	var wl sets.Set[string]
 	{ // TODO(amit): Make this a function?
@@ -169,7 +188,8 @@ func main() {
 		pt = ptimer.NewMessage("{} reads processed")
 		quals := map[int]int{}
 
-		z, _ := gzip.NewReader(bytes.NewBuffer(samBytes))
+		nreads := 0 // TODO(amit): Consider whether we need this.
+		z, _ := zstd.NewReader(bytes.NewBuffer(samBytes))
 		for sm, err := range sam.NewReader(z).Iter() {
 			common.Die(err)
 			pt.Inc()
@@ -183,19 +203,17 @@ func main() {
 				lowq++
 				continue
 			}
+			nreads++
 			entries[sm.Rname].addPos(sm.Pos)
 		}
 		pt.Done()
+		if printNReads {
+			fmt.Println("NReads:", nreads)
+		}
 		fmt.Fprintf(os.Stderr, "Mapped OK %v | Low quality %v | Unmapped %v\n",
 			common.Percf(all-unmapped-lowq, all, 0),
 			common.Percf(lowq, all, 0),
 			common.Percf(unmapped, all, 0))
-		ncontigs := 0
-		for _, e := range entries {
-			if e.counts != nil {
-				ncontigs++
-			}
-		}
 	}
 
 	abnd := entriesToAbundances(entries, denseSumRatio2, minNZ2, maxBinomialErr)
@@ -248,17 +266,15 @@ func main() {
 		common.Die(err)
 		n := 0
 		pt = ptimer.NewMessage("{} reads processed")
-		z, _ := gzip.NewReader(bytes.NewBuffer(samBytes))
+		z, _ := zstd.NewReader(bytes.NewBuffer(samBytes))
 
 		for sm, err := range sam.NewReader(z).Iter() {
 			common.Die(err)
 			pt.Inc()
-			if sm.Flag == sam.FlagUnmapped || sm.Mapq < qualThresh2 ||
+			if sm.Flag&sam.FlagEach == 0 || sm.Mapq < qualThresh2 ||
 				abnd[nameRE.FindString(sm.Rname)] == 0 {
 				n++
-				if uout != nil {
-					common.Die(writeSamAsFastq(sm, uout))
-				}
+				common.Die(writeSamAsFastq(sm, uout))
 				continue
 			}
 		}

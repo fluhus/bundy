@@ -22,3 +22,12 @@ func Perc(a, b int) float64 {
 func Percf(a, b, p int) string {
 	return fmt.Sprintf(fmt.Sprintf("%%.%df%%%%", p), Perc(a, b))
 }
+
+// If returns vif if cond is different from zero, otherwise velse.
+func If[C comparable, T any](cond C, vif T, velse T) T {
+	var zero C
+	if cond != zero {
+		return vif
+	}
+	return velse
+}
