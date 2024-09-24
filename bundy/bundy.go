@@ -29,14 +29,17 @@ import (
 )
 
 const (
-	qualThresh     = 30
-	qualThresh2    = 2
-	denseSumRatio  = 20
-	denseSumRatio2 = 20
-	minNZ          = 0.01
-	minNZ2         = 0.66
-	maxBinomialErr = 0.05
+	qualThresh     = 30   // Quality threshold for first pass.
+	qualThresh2    = 2    // Quality threshold for second pass.
+	denseSumRatio  = 20   // Dense sum ratio for first pass.
+	denseSumRatio2 = 20   // Dense sum ratio for second pass.
+	minNZ          = 0.01 // Minimal coverage for first pass.
+	minNZ2         = 0.66 // Minimal coverage for second pass.
+	maxBinomialErr = 0.05 // Disqualify buckets with this binomial error.
+)
 
+// Debug stuff.
+const (
 	printConsts     = false
 	printCumQuals   = false
 	denseSumNonZero = false
