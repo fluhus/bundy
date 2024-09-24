@@ -2,7 +2,6 @@
 package main
 
 import (
-	"bytes"
 	"cmp"
 	"flag"
 	"fmt"
@@ -13,7 +12,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime/debug"
-	"slices"
 	"sort"
 	"strings"
 
@@ -27,7 +25,6 @@ import (
 	"github.com/fluhus/gostuff/ptimer"
 	"github.com/fluhus/gostuff/sets"
 	"github.com/fluhus/gostuff/snm"
-	"github.com/klauspost/compress/zstd"
 	"golang.org/x/exp/maps"
 )
 
@@ -47,7 +44,7 @@ const (
 	printWhiteList  = false
 	assertNZNonNeg  = true
 	printRawCounts  = false
-	printNReads     = false
+	printNReads     = true
 )
 
 var (
@@ -59,11 +56,13 @@ var (
 	oksGlob      = flag.String("x", "", "Bundyx data files glob")
 	threads      = flag.Int("t", 1, "Number of bowtie2 threads")
 	toJSON       = flag.Bool("j", false, "Output JSON instead of TSV")
-	ignoreLength = flag.Bool("l", false, "Ignore genome lengths in normalization")
-	fast         = flag.Bool("fast", false, "Quick run, loses some accuracy")
-	interleaved  = flag.Bool("interleaved", false, "Input fasta has interleaved paired-end reads")
 	namePat      = flag.String("n", ".*",
 		"Pattern by which to group contigs of the same species")
+
+	ignoreLength = flag.Bool("ignlen", false, "Ignore genome lengths in normalization")
+	fast         = flag.Bool("fast", false, "Quick run, loses some accuracy")
+	interleaved  = flag.Bool("interleaved", false, "Input fasta has interleaved paired-end reads")
+	diskMode     = flag.String("diskmode", "", "Write intermediate data to a `directory` rather than to RAM")
 
 	speciesToPrint = createPrintSpeciesMap()
 )
@@ -117,8 +116,8 @@ func main() {
 	all, unmapped, lowq := 0, 0, 0
 	pt = ptimer.NewMessage("Loading reference")
 	quals := map[int]int{}
-	samBuf := bytes.NewBuffer(nil)
-	samZip, _ := zstd.NewWriter(samBuf, zstd.WithEncoderLevel(1))
+	samw, err := samWriter()
+	common.Die(err)
 
 	var sams iter.Seq2[*sam.SAM, error]
 	args := common.If(*fast, []string{"--very-fast"}, nil)
@@ -143,7 +142,7 @@ func main() {
 		pt.Inc()
 
 		txt, _ := sm.MarshalText()
-		samZip.Write(txt)
+		samw.Write(txt)
 
 		all++
 		if sm.Flag == sam.FlagUnmapped {
@@ -163,9 +162,7 @@ func main() {
 	if printNReads {
 		fmt.Println("NReads:", nreads)
 	}
-
-	samZip.Close()
-	samBytes := slices.Clip(samBuf.Bytes())
+	samw.Close()
 
 	fmt.Fprintf(os.Stderr, "Mapped OK %v | Low quality %v | Unmapped %v\n",
 		common.Percf(all-unmapped-lowq, all, 0),
@@ -189,8 +186,7 @@ func main() {
 		quals := map[int]int{}
 
 		nreads := 0 // TODO(amit): Consider whether we need this.
-		z, _ := zstd.NewReader(bytes.NewBuffer(samBytes))
-		for sm, err := range sam.NewReader(z).Iter() {
+		for sm, err := range samReader() {
 			common.Die(err)
 			pt.Inc()
 			all++
@@ -266,12 +262,11 @@ func main() {
 		common.Die(err)
 		n := 0
 		pt = ptimer.NewMessage("{} reads processed")
-		z, _ := zstd.NewReader(bytes.NewBuffer(samBytes))
 
-		for sm, err := range sam.NewReader(z).Iter() {
+		for sm, err := range samReader() {
 			common.Die(err)
 			pt.Inc()
-			if sm.Flag&sam.FlagEach == 0 || sm.Mapq < qualThresh2 ||
+			if !samMapped(sm) || sm.Mapq < qualThresh2 ||
 				abnd[nameRE.FindString(sm.Rname)] == 0 {
 				n++
 				common.Die(writeSamAsFastq(sm, uout))
@@ -505,4 +500,10 @@ func binomialError(abnd []float64, nn int) float64 {
 	k := gnum.Sum(abnd)
 	q := float64(nn-n) / float64(nn)
 	return math.Sqrt(q / k)
+}
+
+func samMapped(sm *sam.SAM) bool {
+	paired := *inFile2 != "" || *interleaved
+	return (paired && sm.Flag&sam.FlagEach > 0) ||
+		(!paired && sm.Flag&sam.FlagUnmapped == 0)
 }
