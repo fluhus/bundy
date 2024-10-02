@@ -51,15 +51,18 @@ const (
 )
 
 var (
-	inFile       = flag.String("i", "", "Input fastq file")
-	inFile2      = flag.String("i2", "", "Second input fastq file for paired-end")
-	outFile      = flag.String("o", "", "Output TSV file")
-	refFile      = flag.String("r", "", "Bowtie reference")
-	unmappedFile = flag.String("u", "", "Print unmapped reads to this fastq")
-	oksGlob      = flag.String("x", "", "Bundyx data files glob")
-	threads      = flag.Int("t", 1, "Number of bowtie2 threads")
-	toJSON       = flag.Bool("j", false, "Output JSON instead of TSV")
-	namePat      = flag.String("n", ".*",
+	inFile        = flag.String("i", "", "Input fastq file")
+	inFile2       = flag.String("i2", "", "Second input fastq file for paired-end")
+	outFile       = flag.String("o", "", "Output TSV file")
+	refFile       = flag.String("r", "", "Bowtie reference")
+	usedFile      = flag.String("u", "", "Print USED reads to this fastq")
+	unusedFile    = flag.String("uu", "", "Print UNUSED reads to this fastq")
+	usedSAMFile   = flag.String("us", "", "Print USED reads to this SAM")
+	unusedSAMFile = flag.String("uus", "", "Print UNUSED reads to this SAM")
+	oksGlob       = flag.String("x", "", "Bundyx data files glob")
+	threads       = flag.Int("t", 1, "Number of bowtie2 threads")
+	toJSON        = flag.Bool("j", false, "Output JSON instead of TSV")
+	namePat       = flag.String("n", ".*",
 		"Pattern by which to group contigs of the same species")
 
 	ignoreLength = flag.Bool("ignlen", false, "Ignore genome lengths in normalization")
@@ -246,6 +249,7 @@ func main() {
 		of.Close()
 	}
 
+	// Debug stats printing.
 	if printCumQuals {
 		cumquals := map[int]float64{}
 		keys := snm.Sorted(maps.Keys(quals))
@@ -259,26 +263,58 @@ func main() {
 		}
 		fmt.Fprintln(os.Stderr)
 	}
-	if *unmappedFile != "" {
-		fmt.Fprintln(os.Stderr, "Collecting unmapped reads")
-		uout, err := aio.Create(*unmappedFile)
-		common.Die(err)
-		n := 0
+
+	// Dump used/unused reads.
+	if cmp.Or(*usedFile, *unusedFile, *usedSAMFile, *unusedSAMFile) != "" {
+		fmt.Fprintln(os.Stderr, "Dumping used/unused reads")
+		var uout, uuout, usout, uusout io.WriteCloser
+		if *usedFile != "" {
+			uout, err = aio.Create(*usedFile)
+			common.Die(err)
+		}
+		if *unusedFile != "" {
+			uuout, err = aio.Create(*unusedFile)
+			common.Die(err)
+		}
+		if *usedSAMFile != "" {
+			usout, err = aio.Create(*usedSAMFile)
+			common.Die(err)
+		}
+		if *unusedSAMFile != "" {
+			uusout, err = aio.Create(*unusedSAMFile)
+			common.Die(err)
+		}
+		nused := 0
 		pt = ptimer.NewMessage("{} reads processed")
 
 		for sm, err := range samReader() {
 			common.Die(err)
 			pt.Inc()
 			if !samMapped(sm) || sm.Mapq < qualThresh2 ||
-				abnd[nameRE.FindString(sm.Rname)] == 0 {
-				n++
-				common.Die(writeSamAsFastq(sm, uout))
-				continue
+				abnd[nameRE.FindString(sm.Rname)] == 0 { // Unused.
+				if uuout != nil {
+					common.Die(writeSamAsFastq(sm, uuout))
+				}
+				if uusout != nil {
+					txt, _ := sm.MarshalText()
+					_, err := uusout.Write(txt)
+					common.Die(err)
+				}
+			} else { // Used.
+				nused++
+				if uout != nil {
+					common.Die(writeSamAsFastq(sm, uout))
+				}
+				if usout != nil {
+					txt, _ := sm.MarshalText()
+					_, err := usout.Write(txt)
+					common.Die(err)
+				}
 			}
 		}
 		pt.Done()
-		fmt.Fprintf(os.Stderr, "Dumped %v\n", common.Percf(n, all, 0))
-		uout.Close()
+		fmt.Fprintf(os.Stderr, "Used %v of the reads\n", common.Percf(nused, all, 1))
+		common.Die(closeAll(uout, uuout, usout, uusout))
 	}
 
 	fmt.Fprintln(os.Stderr, "Done")
@@ -509,4 +545,14 @@ func samMapped(sm *sam.SAM) bool {
 	paired := *inFile2 != "" || *interleaved
 	return (paired && sm.Flag&sam.FlagEach > 0) ||
 		(!paired && sm.Flag&sam.FlagUnmapped == 0)
+}
+
+func closeAll(w ...io.WriteCloser) error {
+	var err error
+	for _, w := range w {
+		if w != nil {
+			err = w.Close()
+		}
+	}
+	return err
 }
