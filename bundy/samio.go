@@ -1,3 +1,5 @@
+// An abstraction over SAM read/write (memory vs disk).
+
 package main
 
 import (
@@ -9,6 +11,7 @@ import (
 	"github.com/fluhus/gostuff/aio"
 )
 
+// Returns a writer based on the diskmode argument.
 func samWriter() (io.WriteCloser, error) {
 	if *diskMode != "" {
 		return aio.Create(*diskMode)
@@ -16,6 +19,7 @@ func samWriter() (io.WriteCloser, error) {
 	return sambuf, nil
 }
 
+// Returns a reader based on the diskmode argument.
 func samReader() iter.Seq2[*sam.SAM, error] {
 	if *diskMode != "" {
 		return sam.IterFile(*diskMode)
@@ -23,4 +27,5 @@ func samReader() iter.Seq2[*sam.SAM, error] {
 	return sam.NewReader(sambuf.Reader()).Iter()
 }
 
+// A buffer for memory mode.
 var sambuf = &mybuf.Buffer{}

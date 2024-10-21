@@ -322,6 +322,7 @@ func main() {
 
 var nameRE *regexp.Regexp
 
+// Returns the sum of a, discarding some outliers.
 func fDenseSum(a []float64, ratio int, nz float64) float64 {
 	if assertNZNonNeg && nz < 0 { // Debug assert.
 		panic(fmt.Sprintf("negative nz: %f", nz))
@@ -365,6 +366,7 @@ func fDenseSum(a []float64, ratio int, nz float64) float64 {
 	return gnum.Sum(a[pos:pos+winlen]) * float64(n) / float64(winlen)
 }
 
+// Shortens a string for display.
 func shortenString(s string, n int) string {
 	if len(s) <= n {
 		return s
@@ -388,6 +390,7 @@ type bucketOKs struct {
 	ok  []int // OK mappings per bucket.
 }
 
+// Adds one count to the bucket at the given position.
 func (e *contigEntry) addPos(pos int) {
 	if e.counts == nil {
 		e.counts = make([]int, len(e.buckets.ok))
@@ -396,6 +399,7 @@ func (e *contigEntry) addPos(pos int) {
 	e.counts[bucket]++
 }
 
+// Loads and returns bundyx buckets.
 func loadBuckets() (map[string]*contigEntry, error) {
 	type entry struct {
 		OK      int
@@ -427,10 +431,12 @@ func loadBuckets() (map[string]*contigEntry, error) {
 	return result, nil
 }
 
+// Returns a float as an integer, rounded to the nearest whole.
 func iround(f float64) int {
 	return int(math.Round(f))
 }
 
+// Populates the species debug map according to the constant.
 func createPrintSpeciesMap() map[string]bool {
 	if printSpecies == "" {
 		return nil
@@ -442,6 +448,7 @@ func createPrintSpeciesMap() map[string]bool {
 	return m
 }
 
+// Returns a map from species to relative abundance.
 func entriesToAbundances(m map[string]*contigEntry, ratio int, mz float64, maxBinom float64) map[string]float64 {
 	abnd := map[string]float64{}
 	aggEntries := snm.NewDefaultMap(func(s string) *contigEntry {
@@ -507,6 +514,7 @@ func entriesToAbundances(m map[string]*contigEntry, ratio int, mz float64, maxBi
 	return abnd
 }
 
+// Returns a count map for the given entries.
 func entriesToRawCounts(m map[string]*contigEntry) map[string]float64 {
 	abnd := map[string]float64{}
 	for s, e := range m {
@@ -516,6 +524,7 @@ func entriesToRawCounts(m map[string]*contigEntry) map[string]float64 {
 	return abnd
 }
 
+// Normalizes m's values to sum up to 1.
 func toSum1(m map[string]float64) {
 	sum := gnum.Sum(maps.Values(m))
 	for k := range m {
@@ -523,6 +532,7 @@ func toSum1(m map[string]float64) {
 	}
 }
 
+// Writes the given SAM line as a fastq entry.
 func writeSamAsFastq(sm *sam.SAM, w io.Writer) error {
 	fq := fastq.Fastq{
 		Name:     []byte(sm.Qname),
@@ -534,6 +544,7 @@ func writeSamAsFastq(sm *sam.SAM, w io.Writer) error {
 	return err
 }
 
+// Returns the binomial STD for the given params.
 func binomialError(abnd []float64, nn int) float64 {
 	n := len(abnd)
 	k := gnum.Sum(abnd)
@@ -541,12 +552,15 @@ func binomialError(abnd []float64, nn int) float64 {
 	return math.Sqrt(q / k)
 }
 
+// Returnes true if this SAM entry was mapped properly,
+// depending on whether it's single or paried end.
 func samMapped(sm *sam.SAM) bool {
 	paired := *inFile2 != "" || *interleaved
 	return (paired && sm.Flag&sam.FlagEach > 0) ||
 		(!paired && sm.Flag&sam.FlagUnmapped == 0)
 }
 
+// Closes non-nil writers.
 func closeAll(w ...io.WriteCloser) error {
 	var err error
 	for _, w := range w {
