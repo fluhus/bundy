@@ -22,9 +22,9 @@ func samWriter() (io.WriteCloser, error) {
 // Returns a reader based on the diskmode argument.
 func samReader() iter.Seq2[*sam.SAM, error] {
 	if *diskMode != "" {
-		return sam.IterFile(*diskMode)
+		return sam.File(*diskMode)
 	}
-	return sam.NewReader(sambuf.Reader()).Iter()
+	return sam.Reader(sambuf.Reader())
 }
 
 // A buffer for memory mode.

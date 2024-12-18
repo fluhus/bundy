@@ -103,7 +103,7 @@ func makeFasta() io.Reader {
 
 // Writes fastq reads from the given fasta to the given writer.
 func makeFastaFile(file string, w io.Writer) error {
-	for fa, err := range fasta.IterFile(file) {
+	for fa, err := range fasta.File(file) {
 		if err != nil {
 			return err
 		}

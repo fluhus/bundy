@@ -232,7 +232,7 @@ func main() {
 
 	fmt.Fprintln(os.Stderr, "Saving")
 	if *toJSON {
-		common.Die(jio.Save(*outFile, abnd))
+		common.Die(jio.Write(*outFile, abnd))
 	} else {
 		of, err := aio.Create(*outFile)
 		common.Die(err)

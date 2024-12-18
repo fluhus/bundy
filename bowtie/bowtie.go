@@ -34,7 +34,7 @@ func Map(fq, ref string, threads int, args ...string) iter.Seq2[*sam.SAM, error]
 			}
 			c <- err
 		}()
-		for sm, err := range sam.NewReader(r).Iter() {
+		for sm, err := range sam.Reader(r) {
 			if !yield(sm, err) {
 				return
 			}
@@ -64,7 +64,7 @@ func MapInt(fq, ref string, threads int, args ...string) iter.Seq2[*sam.SAM, err
 			}
 			c <- err
 		}()
-		for sm, err := range sam.NewReader(r).Iter() {
+		for sm, err := range sam.Reader(r) {
 			if !yield(sm, err) {
 				return
 			}
@@ -94,7 +94,7 @@ func Map2(fq1, fq2, ref string, threads int, args ...string) iter.Seq2[*sam.SAM,
 			}
 			c <- err
 		}()
-		for sm, err := range sam.NewReader(r).Iter() {
+		for sm, err := range sam.Reader(r) {
 			if !yield(sm, err) {
 				return
 			}
@@ -126,7 +126,7 @@ func MapReader(fq io.Reader, ref string, threads int, args ...string,
 			}
 			c <- err
 		}()
-		for sm, err := range sam.NewReader(r).Iter() {
+		for sm, err := range sam.Reader(r) {
 			if !yield(sm, err) {
 				return
 			}
