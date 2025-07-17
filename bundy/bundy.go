@@ -54,12 +54,12 @@ var (
 	inFile        = flag.String("i", "", "Input fastq file")
 	inFile2       = flag.String("i2", "", "Second input fastq file for paired-end")
 	outFile       = flag.String("o", "", "Output TSV file")
-	refFile       = flag.String("r", "", "Bowtie reference")
+	refFile       = flag.String("x", "", "Bowtie reference")
 	usedFile      = flag.String("u", "", "Print USED reads to this fastq")
 	unusedFile    = flag.String("uu", "", "Print UNUSED reads to this fastq")
 	usedSAMFile   = flag.String("us", "", "Print USED reads to this SAM")
 	unusedSAMFile = flag.String("uus", "", "Print UNUSED reads to this SAM")
-	oksGlob       = flag.String("x", "", "Bundyx data files glob")
+	oksGlob       = flag.String("bx", "", "Bundyx data files glob (default: bowtie_reference.bx/*)")
 	threads       = flag.Int("t", 1, "Number of bowtie2 threads")
 	toJSON        = flag.Bool("j", false, "Output JSON instead of TSV")
 	namePat       = flag.String("n", ".*",
@@ -100,6 +100,9 @@ func main() {
 	}
 	if _, err := os.Stat(*inFile); err != nil {
 		common.Die(fmt.Errorf("unable to access input file: %w", err))
+	}
+	if *oksGlob == "" {
+		*oksGlob = filepath.Join(*refFile+".bx", "*")
 	}
 	var err error
 	nameRE, err = regexp.Compile(*namePat)

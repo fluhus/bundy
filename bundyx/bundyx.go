@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"iter"
+	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/fluhus/biostuff/formats/fasta"
@@ -33,13 +35,12 @@ const (
 )
 
 var (
-	refFile  = flag.String("r", "", "Bowtie reference")
-	inGlob   = flag.String("i", "", "Input file glob pattern")
-	outFile  = flag.String("o", "", "Output file")
-	readLen  = flag.Int("l", 0, "Read length")
-	part     = flag.Int("p", 1, "Part number")
-	nparts   = flag.Int("np", 1, "Total number of parts")
-	nthreads = flag.Int("t", 1, "Number of threads")
+	refFile      = flag.String("x", "", "Bowtie reference")
+	inGlob       = flag.String("i", "", "Input file glob pattern")
+	outFile      = flag.String("o", "", "Output file (default: bowtie_reference.bx/part_number)")
+	readLen      = flag.Int("l", 100, "Read length")
+	nthreads     = flag.Int("t", 1, "Number of threads")
+	part, nparts = partFlag()
 
 	inFiles []string
 )
@@ -78,11 +79,15 @@ func parseArgs() error {
 	if inFiles, _ = filepath.Glob(*inGlob); len(inFiles) == 0 {
 		return fmt.Errorf("no input files found (-i)")
 	}
-	if *outFile == "" {
-		return fmt.Errorf("no output file selected (-o)")
-	}
 	if *refFile == "" {
 		return fmt.Errorf("no reference selected (-r)")
+	}
+	if *outFile == "" {
+		dir := *refFile + ".bx"
+		if err := os.MkdirAll(dir, 0o744); err != nil {
+			return err
+		}
+		*outFile = filepath.Join(dir, fmt.Sprint(*part))
 	}
 	return nil
 }
@@ -204,4 +209,32 @@ func posToBuckets(all int, okPos sets.Set[int]) *bucketOKs {
 		ok[i] += readStep
 	}
 	return &bucketOKs{buckets, ok}
+}
+
+func partFlag() (*int, *int) {
+	p, np := 1, 1
+	flag.Func("p", "Part number and out of how many (default: 1/1)",
+		func(s string) error {
+			m := regexp.MustCompile(`^(\d+)/(\d+)$`).FindStringSubmatch(s)
+			if m == nil {
+				return fmt.Errorf("value must match: #/#")
+			}
+			var err error
+			p, err = strconv.Atoi(m[1])
+			if err != nil {
+				return err
+			}
+			np, err = strconv.Atoi(m[2])
+			if err != nil {
+				return err
+			}
+			if np < 1 {
+				return fmt.Errorf("bad number of parts: %v", np)
+			}
+			if p < 1 || p > np {
+				return fmt.Errorf("bad part number: %v", p)
+			}
+			return nil
+		})
+	return &p, &np
 }
